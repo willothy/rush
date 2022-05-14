@@ -2,13 +2,7 @@ use std::env;
 use std::io::*;
 
 pub fn get_user() -> String {
-    match find_var("USER") {
-        Some(username) => username,
-        None => {
-            println!("Error: Can't resolve username.");
-            String::from("unknown")
-        }
-    }
+    whoami::username()
 }
 
 pub fn write_raw(data: &str) -> Result<()> {
