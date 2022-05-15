@@ -11,7 +11,7 @@ pub struct TokenValue {
     boolean: bool
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Keyword(String),
     NumberLiteral(f64),
@@ -26,6 +26,7 @@ pub enum Token {
     CloseParen,
     OpenBrace,
     CloseBrace,
+    Pipe,
     None
 }
 
@@ -45,6 +46,7 @@ impl Token {
             Token::CloseParen => String::from(")"),
             Token::OpenBrace => String::from("{"),
             Token::CloseBrace => String::from("}"),
+            Token::Pipe => String::from("|"),
             Token::None => String::from("None")
         }
     }
@@ -66,6 +68,7 @@ impl fmt::Display for Token {
             Token::CloseParen => String::from(")"),
             Token::OpenBrace => String::from("{"),
             Token::CloseBrace => String::from("}"),
+            Token::Pipe => String::from("|"),
             Token::None => String::from("None")
         };
         write!(f, "Unexpected token {}", tok)
@@ -89,6 +92,7 @@ impl PartialEq for Token {
             (CloseParen, CloseParen) => true,
             (OpenBrace, OpenBrace) => true,
             (CloseBrace, CloseBrace) => true,
+            (Pipe, Pipe) => true,
             (None, None) => true,
             _ => false,
         }
@@ -131,7 +135,7 @@ impl Tokenizer {
         self.cursor < self.len
     }
 
-    pub fn get_next_token(&mut self) -> &mut Token {
+    pub fn get_next_token(&mut self, consume: bool) -> Token {
         lazy_static! {
             static ref IDENT_PATTERN: Regex = Regex::new(r#"[^\s"(){}]+"#).unwrap();
             static ref NUMBER_PATTERN: Regex = Regex::new(r"^\d+\.?\d*").unwrap();
@@ -154,30 +158,38 @@ impl Tokenizer {
                 r"^\+=",
                 r"^-=",
                 r"^\*=",
-                r"^/="
+                r"^/=",
+                r"^="
             ]).unwrap();
         }
-
+        let mut consumed_len = 0;
         let result: Token;
         let tok_len: usize;
         let temp_program: &str = self.program.substring(self.cursor, self.program.len());
         match WHITESPACE_PATTERN.captures_iter(temp_program).next() {
             Some(cap) => {
                 self.cursor += cap.len();
-                return self.get_next_token();
+                if consume {
+                    consumed_len += cap.len();
+                }
+                return self.get_next_token(consume);
             },
             None => {}
         }
+        println!("{}", temp_program);
         match temp_program {
             _ if temp_program.starts_with("#") => {
                 let comment_chars = temp_program.chars();
                 for (index, chr) in comment_chars.enumerate() {
                     if let '\n' = chr {
                         self.cursor += index;
+                        if consume {
+                            consumed_len += index;
+                        }
                         break;
                     }
                 }
-                return self.get_next_token();
+                return self.get_next_token(consume);
             },
             _ if temp_program.starts_with("let")
                 => (tok_len, result) = (3, Token::Let),
@@ -211,7 +223,23 @@ impl Tokenizer {
             },
             string if STRING_PATTERN.is_match(&temp_program) => {
                 let string = STRING_PATTERN.captures_iter(string).next().unwrap().get(0).unwrap().as_str();
-                (tok_len, result) = (string.len(), Token::StringLiteral(String::from(string.substring(1, string.len()-1))));
+                (tok_len, result) = (string.len(), Token::StringLiteral(String::from(string))); //.substring(1, string.len()-1)
+            },
+            op if ASSIGNMENT_OP_SET.is_match(&temp_program) => {
+                let op: &str = Regex::new(
+                    &ASSIGNMENT_OP_SET
+                    .patterns()[
+                        ASSIGNMENT_OP_SET
+                        .matches(temp_program)
+                        .into_iter()
+                        .next().unwrap()
+                    ]
+                ).unwrap()
+                    .captures_iter(op)
+                    .next().unwrap()
+                    .get(0).unwrap()
+                    .as_str();
+                (tok_len, result) = (op.len(), Token::AssignmentOp(String::from(op)));
             },
             op if LOGICAL_OP_SET.is_match(&temp_program) => {
                 let op: &str = Regex::new(
@@ -227,7 +255,11 @@ impl Tokenizer {
                     .next().unwrap()
                     .get(0).unwrap()
                     .as_str();
-                (tok_len, result) = (op.len(), Token::LogicalOp(String::from(op)));
+                tok_len = op.len();
+                result = match op {
+                    "|" => Token::Pipe,
+                    other => Token::LogicalOp(String::from(other))
+                };
             },
             op if BINARY_OP_SET.is_match(&temp_program) => {
                 let op: &str = Regex::new(
@@ -245,39 +277,25 @@ impl Tokenizer {
                     .as_str();
                 (tok_len, result) = (op.len(), Token::BinaryOp(String::from(op)));
             },
-            op if ASSIGNMENT_OP_SET.is_match(&temp_program) => {
-                let op: &str = Regex::new(
-                    &ASSIGNMENT_OP_SET
-                    .patterns()[
-                        ASSIGNMENT_OP_SET
-                        .matches(temp_program)
-                        .into_iter()
-                        .next().unwrap()
-                    ]
-                ).unwrap()
-                    .captures_iter(op)
-                    .next().unwrap()
-                    .get(0).unwrap()
-                    .as_str();
-                (tok_len, result) = (op.len(), Token::LogicalOp(String::from(op)));
-            },
             ident if IDENT_PATTERN.is_match(&temp_program) => {
                 let ident = IDENT_PATTERN.captures_iter(ident).next().unwrap().get(0).unwrap().as_str();
                 (tok_len, result) = (ident.len(), Token::Identifier(String::from(ident)));
             },
-            bad_tok => panic!("Unknown token {}...", bad_tok.substring(0, 7))
+            "" => return Token::None,
+            bad_tok => panic!("Unknown token {}...", bad_tok)
         }
 
-        self.tokens.push(result);
+        self.tokens.push(result.clone());
 
         self.cursor += tok_len;
+        self.cursor -= consumed_len;
 
-        self.tokens.last_mut().unwrap()
+        result
     }
 
     pub fn exec(&mut self) -> &Self {
         while self.has_more_tokens() {
-            self.get_next_token();
+            self.get_next_token(true);
         }
         self
     }
@@ -291,16 +309,16 @@ mod tests {
     fn tokenizer_test_1() {
         let mut t = Tokenizer::from("if 1.0 25.0 else 3.0");
 
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("if")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(1.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(25.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("else")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(3.0))
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("if")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(1.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(25.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("else")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(3.0))
     }
 
     #[test]
@@ -308,72 +326,72 @@ mod tests {
         let mut t = Tokenizer::from("#test\n
         1.0 && 2.0");
 
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(1.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::LogicalOp(String::from("&&")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(2.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(1.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::LogicalOp(String::from("&&")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(2.0));
     }
 
     #[test]
     fn tokenizer_test_3() {
         let mut t = Tokenizer::from("if true { 1 } else { 2 }");
 
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("if")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::BoolLiteral(true));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::OpenBrace);
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(1.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::CloseBrace);
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("else")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::OpenBrace);
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(2.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::CloseBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("if")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::BoolLiteral(true));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::OpenBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(1.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::CloseBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("else")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::OpenBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(2.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::CloseBrace);
     }
 
     #[test]
     fn tokenizer_test_4() {
         let mut t = Tokenizer::from("if \"test\" { 1 }");
 
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("if")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::StringLiteral(String::from("test")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::OpenBrace);
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(1.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::CloseBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("if")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::StringLiteral(String::from("test")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::OpenBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(1.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::CloseBrace);
     }
 
     #[test]
     fn tokenizer_test_5() {
         let mut t = Tokenizer::from("if \"test\" { ls -a }");
 
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("if")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::StringLiteral(String::from("test")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::OpenBrace);
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Identifier(String::from("ls")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::BinaryOp(String::from("-")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Identifier(String::from("a")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::CloseBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("if")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::StringLiteral(String::from("test")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::OpenBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Identifier(String::from("ls")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::BinaryOp(String::from("-")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Identifier(String::from("a")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::CloseBrace);
     }
 
 
@@ -381,19 +399,19 @@ mod tests {
     fn tokenizer_test_6() {
         let mut t = Tokenizer::from("if \"test\" { 2 + 2 }");
 
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::Keyword(String::from("if")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::StringLiteral(String::from("test")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::OpenBrace);
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(2.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::BinaryOp(String::from("+")));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::NumberLiteral(2.0));
-        let tok = t.get_next_token();
-        assert_eq!(*tok, Token::CloseBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::Keyword(String::from("if")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::StringLiteral(String::from("test")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::OpenBrace);
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(2.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::BinaryOp(String::from("+")));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::NumberLiteral(2.0));
+        let tok = t.get_next_token(true);
+        assert_eq!(tok, Token::CloseBrace);
     }
 }
