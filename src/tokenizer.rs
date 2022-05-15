@@ -9,7 +9,12 @@ pub use self::Token::{
     StringLiteral,
     Identifier,
     BinaryOp,
-    LogicalOp
+    LogicalOp,
+    AssignmentOp,
+    OpenParen,
+    CloseParen,
+    OpenBrace,
+    CloseBrace
 };
 //use std::mem;
 
@@ -20,7 +25,12 @@ pub enum Token {
     StringLiteral(String),
     Identifier(String),
     BinaryOp(String),
-    LogicalOp(String)
+    LogicalOp(String),
+    AssignmentOp(String),
+    OpenParen,
+    CloseParen,
+    OpenBrace,
+    CloseBrace
 }
 
 #[derive(Debug)]
@@ -39,19 +49,11 @@ impl Tokenizer {
             cursor: 0,
             len: input.len()
         };
-        t.preprocess();
         t
     }
 
     pub fn has_more_tokens(&self) -> bool {
-        self.cursor < self.program.len()
-    }
-
-    pub fn preprocess(&mut self) {
-        lazy_static! {
-            static ref COMMENT_PATTERN: Regex = Regex::new(r"(?m)#.*\n").unwrap();
-        }
-        COMMENT_PATTERN.replace_all(&self.program, "\n").chars();
+        self.cursor < self.len
     }
 
     pub fn get_next_token(&mut self) -> &Token {
@@ -60,6 +62,7 @@ impl Tokenizer {
             static ref NUMBER_PATTERN: Regex = Regex::new(r"^\d+\.?\d*").unwrap();
             static ref STRING_PATTERN: Regex = Regex::new(r#"^".*""#).unwrap();
             static ref WHITESPACE_PATTERN: Regex = Regex::new(r"^[\s]+").unwrap();
+            static ref LINE_TERM_PATTERN: Regex = Regex::new(r"^\n").unwrap();
             static ref LOGICAL_OP_SET: RegexSet = RegexSet::new(&[
                 r"^\|\|",
                 r"^\|",
@@ -72,6 +75,12 @@ impl Tokenizer {
                 r"^\*",
                 r"^/"
             ]).unwrap();
+            static ref ASSIGNMENT_OP_SET: RegexSet = RegexSet::new(&[
+                r"^\+=",
+                r"^-=",
+                r"^\*=",
+                r"^/="
+            ]).unwrap();
         }
 
         let result: Token;
@@ -79,14 +88,30 @@ impl Tokenizer {
         let temp_program: &str = self.program.substring(self.cursor, self.program.len());
         match WHITESPACE_PATTERN.captures_iter(temp_program).next() {
             Some(cap) => {
-                println!("Escaping whitespace");
                 self.cursor += cap.len();
                 return self.get_next_token();
             },
             None => {}
         }
-        println!("{}", temp_program);
         match temp_program {
+            _ if temp_program.starts_with("#") => {
+                let comment_chars = temp_program.chars();
+                for (index, chr) in comment_chars.enumerate() {
+                    if let '\n' = chr {
+                        self.cursor += index;
+                        break;
+                    }
+                }
+                return self.get_next_token();
+            },
+            _ if temp_program.starts_with("(")
+                => (tok_len, result) = (1, OpenParen),
+            _ if temp_program.starts_with(")")
+                => (tok_len, result) = (1, CloseParen),
+            _ if temp_program.starts_with("{")
+                => (tok_len, result) = (1, OpenBrace),
+            _ if temp_program.starts_with("}")
+                => (tok_len, result) = (1, CloseBrace),
             _ if temp_program.starts_with("if")
                 => (tok_len, result) = (2, Keyword(String::from("if"))),
             _ if temp_program.starts_with("else")
@@ -143,6 +168,22 @@ impl Tokenizer {
                     .as_str();
                 (tok_len, result) = (op.len(), LogicalOp(String::from(op)));
             },
+            op if ASSIGNMENT_OP_SET.is_match(&temp_program) => {
+                let op: &str = Regex::new(
+                    &ASSIGNMENT_OP_SET
+                    .patterns()[
+                        ASSIGNMENT_OP_SET
+                        .matches(temp_program)
+                        .into_iter()
+                        .next().unwrap()
+                    ]
+                ).unwrap()
+                    .captures_iter(op)
+                    .next().unwrap()
+                    .get(0).unwrap()
+                    .as_str();
+                (tok_len, result) = (op.len(), LogicalOp(String::from(op)));
+            },
             bad_tok => panic!("Unknown token {}", bad_tok)
         }
 
@@ -168,8 +209,7 @@ mod tests {
     #[test]
     fn tokenizer_test() {
         let mut t = Tokenizer::new("if 1.0 25.0 else 3.0");
-        //let tok = t.exec();
-        //println!("Final: {:?}", tok);
+
         let tok = t.get_next_token();
         assert_eq!(*tok, Keyword(String::from("if")));
         let tok = t.get_next_token();
@@ -184,9 +224,9 @@ mod tests {
 
     #[test]
     fn tokenizer_test_2() {
-        let mut t = Tokenizer::new("1.0 && 2.0");
-        //let tok = t.exec();
-        //println!("Final: {:?}", tok);
+        let mut t = Tokenizer::new("#test\n
+        1.0 && 2.0");
+
         let tok = t.get_next_token();
         assert_eq!(*tok, NumberLiteral(1.0));
         let tok = t.get_next_token();
