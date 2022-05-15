@@ -1,10 +1,6 @@
 use std::env;
 use std::io::*;
 
-pub fn get_user() -> String {
-    whoami::username()
-}
-
 pub fn write_raw(data: &str) -> Result<()> {
     let mut out = BufWriter::new(stdout());
 

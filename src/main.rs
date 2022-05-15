@@ -3,6 +3,7 @@ use std::process::{Command, Stdio, Child};
 use std::path;
 use std::env;
 
+mod tokenizer;
 mod lib;
 
 fn main() {
