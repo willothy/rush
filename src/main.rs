@@ -2,8 +2,10 @@ use std::io::*;
 use std::process::{Command, Stdio, Child};
 use std::path;
 use std::env;
+use whoami;
 
 mod tokenizer;
+mod parser;
 mod lib;
 
 fn main() {
@@ -12,18 +14,12 @@ fn main() {
 }
 
 fn main_loop() {
-    let pwd = match lib::find_var("PWD") {
-        Some(dir) => dir,
-        None => {
-            eprintln!("Error finding pwd.");
-            String::from("/?")
-        }
-    };
+    //let pwd;
     let mut input: String = String::new();
 
     loop {
         input.clear();
-        print!("{} in {}\nrush on {} > ", whoami::username(), pwd, whoami::hostname());
+        print!("{} in {}\nrush on {} > ", whoami::username(), env::current_dir().unwrap().to_str().unwrap(), whoami::hostname());
         let _ = stdout().flush();
 
         stdin().read_line(&mut input).unwrap();
@@ -44,11 +40,12 @@ fn main_loop() {
 
             match command {
                 "cd" => {
+                    let home = home::home_dir().unwrap();//&env::home_dir().unwrap();
                     // default to '/' as new directory if one was not provided
                     let new_dir = args
                         .peekable()
                         .peek()
-                        .map_or("/", |x| *x);
+                        .map_or(home.to_str().unwrap_or("/"), |x| *x);
                     let root = path::Path::new(new_dir);
                     if let Err(e) = env::set_current_dir(&root) {
                         eprintln!("{}", e);
@@ -104,6 +101,7 @@ fn run_command(command: &str, args: std::str::SplitWhitespace) {
 }
 
 fn init_shell() {
+    env::set_current_dir(home::home_dir().unwrap()).unwrap();
     clear();
 }
 
