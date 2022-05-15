@@ -8,7 +8,8 @@ pub use self::Token::{
     NumberLiteral,
     StringLiteral,
     Identifier,
-    Operator
+    BinaryOp,
+    LogicalOp
 };
 //use std::mem;
 
@@ -18,7 +19,8 @@ pub enum Token {
     NumberLiteral(f64),
     StringLiteral(String),
     Identifier(String),
-    Operator(String),
+    BinaryOp(String),
+    LogicalOp(String)
 }
 
 #[derive(Debug)]
@@ -58,7 +60,20 @@ impl Tokenizer {
             static ref NUMBER_PATTERN: Regex = Regex::new(r"^\d+\.?\d*").unwrap();
             static ref STRING_PATTERN: Regex = Regex::new(r#"^".*""#).unwrap();
             static ref WHITESPACE_PATTERN: Regex = Regex::new(r"^[\s]+").unwrap();
+            static ref LOGICAL_OP_SET: RegexSet = RegexSet::new(&[
+                r"^\|\|",
+                r"^\|",
+                r"^&&",
+                r"^&",
+            ]).unwrap();
+            static ref BINARY_OP_SET: RegexSet = RegexSet::new(&[
+                r"^\+",
+                r"^-",
+                r"^\*",
+                r"^/"
+            ]).unwrap();
         }
+
         let result: Token;
         let tok_len: usize;
         let temp_program: &str = self.program.substring(self.cursor, self.program.len());
@@ -92,9 +107,41 @@ impl Tokenizer {
                 let ident = IDENT_PATTERN.captures_iter(ident).next().unwrap().get(0).unwrap().as_str();
                 (tok_len, result) = (ident.len(), Identifier(String::from(ident)));
             },
-            string if IDENT_PATTERN.is_match(&temp_program) => {
-                let string = IDENT_PATTERN.captures_iter(string).next().unwrap().get(0).unwrap().as_str();
+            string if STRING_PATTERN.is_match(&temp_program) => {
+                let string = STRING_PATTERN.captures_iter(string).next().unwrap().get(0).unwrap().as_str();
                 (tok_len, result) = (string.len(), StringLiteral(String::from(string)));
+            },
+            op if BINARY_OP_SET.is_match(&temp_program) => {
+                let op: &str = Regex::new(
+                    &BINARY_OP_SET
+                    .patterns()[
+                        BINARY_OP_SET
+                        .matches(temp_program)
+                        .into_iter()
+                        .next().unwrap()
+                    ]
+                ).unwrap()
+                    .captures_iter(op)
+                    .next().unwrap()
+                    .get(0).unwrap()
+                    .as_str();
+                (tok_len, result) = (op.len(), BinaryOp(String::from(op)));
+            },
+            op if LOGICAL_OP_SET.is_match(&temp_program) => {
+                let op: &str = Regex::new(
+                    &LOGICAL_OP_SET
+                    .patterns()[
+                        LOGICAL_OP_SET
+                        .matches(temp_program)
+                        .into_iter()
+                        .next().unwrap()
+                    ]
+                ).unwrap()
+                    .captures_iter(op)
+                    .next().unwrap()
+                    .get(0).unwrap()
+                    .as_str();
+                (tok_len, result) = (op.len(), LogicalOp(String::from(op)));
             },
             bad_tok => panic!("Unknown token {}", bad_tok)
         }
@@ -135,11 +182,16 @@ mod tests {
         assert_eq!(*tok, NumberLiteral(3.0))
     }
 
-   /* #[test]
+    #[test]
     fn tokenizer_test_2() {
-        let mut t = Tokenizer::new("if 25.0 then 3.0 + 90;");
-        println!("{:?}", t.tokens);
-        let tok = t.exec();
-        //assert_eq!(tok, Keyword(String::from("if2")));
-    }*/
+        let mut t = Tokenizer::new("1.0 && 2.0");
+        //let tok = t.exec();
+        //println!("Final: {:?}", tok);
+        let tok = t.get_next_token();
+        assert_eq!(*tok, NumberLiteral(1.0));
+        let tok = t.get_next_token();
+        assert_eq!(*tok, LogicalOp(String::from("&&")));
+        let tok = t.get_next_token();
+        assert_eq!(*tok, NumberLiteral(2.0));
+    }
 }
