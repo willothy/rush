@@ -2,7 +2,7 @@ use regex::{ Regex, RegexSet };
 use lazy_static::*;
 use std::panic;
 use substring::Substring;
-//use std::mem;
+use std::fmt;
 
 #[derive(Debug)]
 pub struct TokenValue {
@@ -27,6 +27,49 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     None
+}
+
+impl Token {
+    pub fn to_string(&self) -> String {
+        match self {
+            Token::Keyword(s) => String::from(format!("Keyword ({})", s)),
+            Token::NumberLiteral(f) => String::from(format!("NumberLiteral ({})", f)),
+            Token::StringLiteral(s) => String::from(format!("StringLiteral ({})", s)),
+            Token::BoolLiteral(b) => String::from(format!("BoolLiteral ({})", b)),
+            Token::Identifier(s) => String::from(format!("Identifier ({})", s)),
+            Token::BinaryOp(s) => String::from(format!("BinaryOp ({})", s)),
+            Token::LogicalOp(s) => String::from(format!("LogicalOp ({})", s)),
+            Token::AssignmentOp(s) => String::from(format!("AssignmentOp ({})", s)),
+            Token::Let => String::from("Let"),
+            Token::OpenParen => String::from("("),
+            Token::CloseParen => String::from(")"),
+            Token::OpenBrace => String::from("{"),
+            Token::CloseBrace => String::from("}"),
+            Token::None => String::from("None")
+        }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let tok = match self {
+            Token::Keyword(s) => String::from(format!("{}", s)),
+            Token::NumberLiteral(f) => String::from(format!("NumberLiteral ({})", f)),
+            Token::StringLiteral(s) => String::from(format!("{}", s)),
+            Token::BoolLiteral(b) => String::from(format!("{}", b)),
+            Token::Identifier(s) => String::from(format!("{}", s)),
+            Token::BinaryOp(s) => String::from(format!("{}", s)),
+            Token::LogicalOp(s) => String::from(format!("{}", s)),
+            Token::AssignmentOp(s) => String::from(format!("{}", s)),
+            Token::Let => String::from("Let"),
+            Token::OpenParen => String::from("("),
+            Token::CloseParen => String::from(")"),
+            Token::OpenBrace => String::from("{"),
+            Token::CloseBrace => String::from("}"),
+            Token::None => String::from("None")
+        };
+        write!(f, "Unexpected token {}", tok)
+    }
 }
 
 impl PartialEq for Token {

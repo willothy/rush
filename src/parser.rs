@@ -1,7 +1,23 @@
 use std::boxed::Box;
 use std::mem;
+use std::fmt;
 
 use crate::tokenizer::{Token, Tokenizer};
+
+type Result<Token> = std::result::Result<Token, SyntaxError>;
+
+pub enum SyntaxError {
+    UnexpectedToken(String)
+}
+
+impl fmt::Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let tok = match self {
+            SyntaxError::UnexpectedToken(t) => t,
+        };
+        write!(f, "Unexpected token {}", tok)
+    }
+}
 
 pub enum ASTNodeType {
     StatementList(Vec<ASTNode>),
@@ -48,15 +64,14 @@ impl Parser {
         mem::replace(self.tokenizer.get_next_token(), Token::None)
     }
 
-    fn expect(&mut self, tok_type: Token) -> Token {
+    fn expect(&mut self, tok_type: Token) -> Result<Token> {
         let token = self.get_lookahead();
 
         if token == tok_type {
             self.update_lookahead();
-            return token;
-        } else {
-            panic!("Syntax Error: Unexpected token {:?}", token)
+            return Ok(token)
         }
+        Err(SyntaxError::UnexpectedToken(token.to_string()))
     }
 
     /**
@@ -102,31 +117,45 @@ impl Parser {
         let look = self.get_lookahead();
         match look {
             Token::StringLiteral(string) => match self.expect(Token::StringLiteral(string)) {
-                Token::StringLiteral(s) => return ASTNode {
+                Ok(Token::StringLiteral(s)) => ASTNode {
                     node_type: ASTNodeType::StringLiteral(s)
                 },
-                _ => { panic!(); }
+                Err(e) => panic!("{}", e),
+                _ => panic!()
             },
             Token::NumberLiteral(number) => match self.expect(Token::NumberLiteral(number)) {
-                Token::NumberLiteral(n) => return ASTNode {
+                Ok(Token::NumberLiteral(n)) => ASTNode {
                     node_type: ASTNodeType::NumberLiteral(n)
                 },
-                _ => { panic!(); }
+                Err(e) => panic!("{}", e),
+                _ => panic!()
             },
             Token::BoolLiteral(boolean) => match self.expect(Token::BoolLiteral(boolean)) {
-                Token::BoolLiteral(b) => return ASTNode {
+                Ok(Token::BoolLiteral(b)) => ASTNode {
                     node_type: ASTNodeType::BoolLiteral(b)
                 },
-                _ => { panic!(); }
+                Err(e) => panic!("{}", e),
+                _ => panic!()
             },
-            _ => {panic!()}
-        };
+            Token::OpenParen => match self.expect(Token::OpenParen) {
+                Ok(Token::OpenParen) => self.parenthesized_expression(),
+                Err(e) => panic!("{}", e),
+                _ => panic!()
+            }
+            _ => panic!()
+        }
+    }
+
+    pub fn parenthesized_expression(&mut self) -> ASTNode {
+        ASTNode {
+            node_type: ASTNodeType::None
+        }
     }
 
     pub fn var_def(&mut self) -> ASTNode {
         self.expect(Token::Let);
         let name: String = match self.expect(Token::Identifier(String::new())) {
-            Token::Identifier(name) => name,
+            Ok(Token::Identifier(name)) => name,
             _ => { panic!(); }
         };
         self.expect(Token::AssignmentOp(String::from("=")));
