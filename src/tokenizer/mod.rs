@@ -2,102 +2,16 @@ use regex::{ Regex, RegexSet };
 use lazy_static::*;
 use std::panic;
 use substring::Substring;
-use std::fmt;
 
-#[derive(Debug)]
+pub mod token;
+use token::Token;
+
 pub struct TokenValue {
     number: f64,
     string: String,
     boolean: bool
 }
 
-#[derive(Debug, Clone)]
-pub enum Token {
-    Keyword(String),
-    NumberLiteral(f64),
-    StringLiteral(String),
-    BoolLiteral(bool),
-    Identifier(String),
-    BinaryOp(String),
-    LogicalOp(String),
-    AssignmentOp(String),
-    Let,
-    OpenParen,
-    CloseParen,
-    OpenBrace,
-    CloseBrace,
-    Pipe,
-    None
-}
-
-impl Token {
-    pub fn to_string(&self) -> String {
-        match self {
-            Token::Keyword(s) => String::from(format!("Keyword ({})", s)),
-            Token::NumberLiteral(f) => String::from(format!("NumberLiteral ({})", f)),
-            Token::StringLiteral(s) => String::from(format!("StringLiteral ({})", s)),
-            Token::BoolLiteral(b) => String::from(format!("BoolLiteral ({})", b)),
-            Token::Identifier(s) => String::from(format!("Identifier ({})", s)),
-            Token::BinaryOp(s) => String::from(format!("BinaryOp ({})", s)),
-            Token::LogicalOp(s) => String::from(format!("LogicalOp ({})", s)),
-            Token::AssignmentOp(s) => String::from(format!("AssignmentOp ({})", s)),
-            Token::Let => String::from("Let"),
-            Token::OpenParen => String::from("("),
-            Token::CloseParen => String::from(")"),
-            Token::OpenBrace => String::from("{"),
-            Token::CloseBrace => String::from("}"),
-            Token::Pipe => String::from("|"),
-            Token::None => String::from("None")
-        }
-    }
-}
-
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let tok = match self {
-            Token::Keyword(s) => String::from(format!("{}", s)),
-            Token::NumberLiteral(f) => String::from(format!("NumberLiteral ({})", f)),
-            Token::StringLiteral(s) => String::from(format!("{}", s)),
-            Token::BoolLiteral(b) => String::from(format!("{}", b)),
-            Token::Identifier(s) => String::from(format!("{}", s)),
-            Token::BinaryOp(s) => String::from(format!("{}", s)),
-            Token::LogicalOp(s) => String::from(format!("{}", s)),
-            Token::AssignmentOp(s) => String::from(format!("{}", s)),
-            Token::Let => String::from("Let"),
-            Token::OpenParen => String::from("("),
-            Token::CloseParen => String::from(")"),
-            Token::OpenBrace => String::from("{"),
-            Token::CloseBrace => String::from("}"),
-            Token::Pipe => String::from("|"),
-            Token::None => String::from("None")
-        };
-        write!(f, "Unexpected token {}", tok)
-    }
-}
-
-impl PartialEq for Token {
-    fn eq(&self, other: &Self) -> bool {
-        use Token::*;
-        match (self, other) {
-            (Keyword(a), Keyword(b)) => true,
-            (NumberLiteral(a), NumberLiteral(b)) => true,
-            (StringLiteral(a), StringLiteral(b)) => true,
-            (BoolLiteral(a), BoolLiteral(b)) => true,
-            (Identifier(a), Identifier(b)) => true,
-            (BinaryOp(a), BinaryOp(b)) => true,
-            (LogicalOp(a), LogicalOp(b)) => true,
-            (AssignmentOp(a), AssignmentOp(b)) => true,
-            (Let, Let) => true,
-            (OpenParen, OpenParen) => true,
-            (CloseParen, CloseParen) => true,
-            (OpenBrace, OpenBrace) => true,
-            (CloseBrace, CloseBrace) => true,
-            (Pipe, Pipe) => true,
-            (None, None) => true,
-            _ => false,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct Tokenizer {
@@ -179,7 +93,7 @@ impl Tokenizer {
         println!("{}", temp_program);
         match temp_program {
             _ if temp_program.starts_with("#") => {
-                let comment_chars = temp_program.chars();
+                let comment_chars: std::str::Chars = temp_program.chars();
                 for (index, chr) in comment_chars.enumerate() {
                     if let '\n' = chr {
                         self.cursor += index;
@@ -281,7 +195,7 @@ impl Tokenizer {
                 let ident = IDENT_PATTERN.captures_iter(ident).next().unwrap().get(0).unwrap().as_str();
                 (tok_len, result) = (ident.len(), Token::Identifier(String::from(ident)));
             },
-            "" => return Token::None,
+            "" => return Token::Empty,
             bad_tok => panic!("Unknown token {}...", bad_tok)
         }
 

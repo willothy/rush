@@ -1,10 +1,10 @@
 use std::boxed::Box;
-use std::mem;
 use std::fmt;
 
-use crate::tokenizer::{Token, Tokenizer};
+use crate::tokenizer::Tokenizer;
+use crate::tokenizer::token::Token;
 
-type Result<Token> = std::result::Result<Token, SyntaxError>;
+//pub use crate::parser::SyntaxError::*;
 
 pub enum SyntaxError {
     UnexpectedToken(String)
@@ -19,7 +19,7 @@ impl fmt::Display for SyntaxError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ASTNodeType {
     StatementList(Vec<ASTNode>),
     Statement(Box<ASTNode>),
@@ -34,7 +34,7 @@ pub enum ASTNodeType {
     None
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ASTNode {
     node_type: ASTNodeType,
 }
@@ -47,7 +47,7 @@ pub struct Parser {
 impl Parser {
     pub fn new() -> Self {
         Parser {
-            lookahead: Token::None,
+            lookahead: Token::Empty,
             tokenizer: Tokenizer::new()
         }
     }
@@ -82,7 +82,7 @@ impl Parser {
     pub fn statement_list(&mut self) -> Vec<ASTNode> {
         let mut statements = Vec::<ASTNode>::new();
 
-        while self.lookahead != Token::None {
+        while self.lookahead != Token::Empty {
             println!("{}", self.lookahead.clone());
             statements.push(self.statement());
         }
@@ -242,13 +242,26 @@ mod tests {
     #[test]
     fn parser_test_1() {
         let p = Parser::new();
-        assert_eq!(p.lookahead, Token::None);
+        assert_eq!(p.lookahead, Token::Empty);
     }
 
     #[test]
     fn parser_test_2() {
         let mut p = Parser::new();
-        println!("{:?}", p.parse("let xawd = 10.0"));
-        assert_eq!(1, 2);
+        let parsed = p.parse("let xawd = 10.0");
+        println!("{:?}", parsed);
+        let mut control = Vec::new();
+        control.push(
+            ASTNode{
+                node_type: ASTNodeType::VarDef(String::from("xawd"), Box::from(
+                    ASTNode {
+                        node_type: ASTNodeType::NumberLiteral(10.0)
+                    }
+                )),
+            }
+        );
+        assert_eq!(parsed, ASTNode {
+            node_type: ASTNodeType::StatementList(control)
+        });
     }
 }
