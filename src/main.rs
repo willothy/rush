@@ -1,6 +1,6 @@
 use std::io::*;
 use std::process::{Command, Stdio, Child};
-use std::path;
+use std::path::{self, PathBuf};
 use std::env;
 use whoami;
 
@@ -40,8 +40,12 @@ fn main_loop() {
 
             match command {
                 "cd" => {
-                    let home = home::home_dir().unwrap();//&env::home_dir().unwrap();
-                    // default to '/' as new directory if one was not provided
+                    // default to '~/' as new directory if one was not provided
+                    // default to '/' if home dir doesn't exist
+                    let home = match home::home_dir() {
+                        Some(home_dir) => home_dir,
+                        None => PathBuf::from("/")
+                    };
                     let new_dir = args
                         .peekable()
                         .peek()
@@ -101,7 +105,14 @@ fn run_command(command: &str, args: std::str::SplitWhitespace) {
 }
 
 fn init_shell() {
-    env::set_current_dir(home::home_dir().unwrap()).unwrap();
+    let home = match home::home_dir() {
+        Some(home_dir) => home_dir,
+        None => PathBuf::from("/")
+    };
+    match env::set_current_dir(home) {
+        Ok(_) => {},
+        Err(_) => env::set_current_dir("/").unwrap()
+    }
     clear();
 }
 
