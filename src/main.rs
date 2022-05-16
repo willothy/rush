@@ -3,6 +3,8 @@ use std::process::{Command, Stdio, Child};
 use std::path::{self, PathBuf};
 use std::env;
 use whoami;
+use crossterm::{ExecutableCommand, cursor, terminal};
+
 
 mod tokenizer;
 mod parser;
@@ -14,7 +16,6 @@ fn main() {
 }
 
 fn main_loop() {
-    //let pwd;
     let mut input: String = String::new();
 
     loop {
@@ -39,6 +40,11 @@ fn main_loop() {
             let args = input;
 
             match command {
+                "prompt" => {
+                    let prompt = args
+                        .peekable()
+                        .peek();
+                },
                 "cd" => {
                     // default to '~/' as new directory if one was not provided
                     // default to '/' if home dir doesn't exist
@@ -50,11 +56,11 @@ fn main_loop() {
                         .peekable()
                         .peek()
                         .map_or(home.to_str().unwrap_or("/"), |x| *x);
-                    let root = path::Path::new(new_dir);
-                    if let Err(e) = env::set_current_dir(&root) {
+                    let new_dir = path::Path::new(new_dir);
+                    if let Err(e) = env::set_current_dir(&new_dir) {
                         eprintln!("{}", e);
                     }
-
+                    set_title(format!("rush {}", "test"));
                     previous_command = None;
                 },
                 "exit" => return,
@@ -100,25 +106,37 @@ fn main_loop() {
     }
 }
 
-fn run_command(command: &str, args: std::str::SplitWhitespace) {
-    //
-}
-
 fn init_shell() {
     let home = match home::home_dir() {
         Some(home_dir) => home_dir,
         None => PathBuf::from("/")
     };
     match env::set_current_dir(home) {
-        Ok(_) => {},
-        Err(_) => env::set_current_dir("/").unwrap()
+        Ok(_) => {
+            //set_title(format!("rush {}", current_dir()));
+        },
+        Err(_) => {
+            env::set_current_dir("/").unwrap();
+            //set_title(format!("rush {}", current_dir()));
+        }
     }
     clear();
 }
 
+fn set_title(title: String) {
+    match lib::write_raw(format!("\x1b[2;{}\x07", title).as_str()) {
+        Ok(_) => {},
+        Err(e) => println!("ERROR: {}", e)
+    }
+}
+
+fn current_dir() -> String {
+    String::from(env::current_dir().unwrap().clone().to_str().unwrap())
+}
+
 // Clear shell using escape sequence
 fn clear() {
-    match lib::write_raw("\x1b[H\x1b[J") {
+    match stdout().execute(terminal::Clear(terminal::ClearType::All)) {
         Ok(_) => {},
         Err(e) => println!("ERROR: {}", e)
     }
