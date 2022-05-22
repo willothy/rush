@@ -2,12 +2,16 @@ use std::io::*;
 use std::process::{Command, Stdio, Child};
 use std::path::{self, PathBuf};
 use std::env;
+use std::os::raw::{c_int, c_uint, c_ulong};
+use std::fmt::Display;
+
+
+use pyo3::prelude::*;
+use pyo3::types::IntoPyDict;
+
 use whoami;
-use crossterm::{ExecutableCommand, cursor, terminal};
+use crossterm::{ExecutableCommand, terminal};
 
-
-mod tokenizer;
-mod parser;
 mod lib;
 
 fn main() {
@@ -15,36 +19,47 @@ fn main() {
     main_loop();
 }
 
+
 fn main_loop() {
+    pyo3::prepare_freethreaded_python();
+    let gil = Python::acquire_gil();
+    let py: Python = gil.python();
+
     let mut input: String = String::new();
+    let mut current_dir: String = String::from(env::current_dir()
+        .unwrap()
+        .to_str()
+        .unwrap());
 
     loop {
         input.clear();
-        print!("{} in {}\nrush on {} > ", whoami::username(), env::current_dir().unwrap().to_str().unwrap(), whoami::hostname());
+        print!("{} in {}\nrush on {} > ", whoami::username(), current_dir, whoami::hostname());
         let _ = stdout().flush();
+        let mut buf = Vec::<u8>::new();
 
-        stdin().read_line(&mut input).unwrap();
+        //stdin().read_line(&mut input).unwrap();
+        let input_size: usize = stdin().read_to_string(&mut input).unwrap();
+
+        /*for i in 0..input_size {
+            input.push(*buf.get(i).unwrap() as char)
+        }*/
 
         let mut commands = input
             .trim()
             .split(" | ")
             .peekable();
-        let mut previous_command = None;
+        //let mut previous_command = None;
 
         while let Some(command) = commands.next() {
             // Shadow input with trimmed input
-            let mut input = command
-                .trim()
-                .split_whitespace();
-            let command = input.next().unwrap();
-            let args = input;
+            let input = command
+                .trim();
+                //.split_whitespace();
+            let mut input_split = input.split_whitespace();
+            let command = input_split.next().unwrap();
+            let args = input_split;
 
             match command {
-                "prompt" => {
-                    let prompt = args
-                        .peekable()
-                        .peek();
-                },
                 "cd" => {
                     // default to '~/' as new directory if one was not provided
                     // default to '/' if home dir doesn't exist
@@ -60,50 +75,54 @@ fn main_loop() {
                     if let Err(e) = env::set_current_dir(&new_dir) {
                         eprintln!("{}", e);
                     }
-                    set_title(format!("rush {}", "test"));
-                    previous_command = None;
+                    set_title(String::from(format!("rush {}", new_dir.to_str().unwrap())));
+                    //previous_command = None;
                 },
                 "exit" => return,
-                command => {
-                    let stdin = previous_command
-                        .map_or(
-                            Stdio::inherit(),
-                            |output: Child| Stdio::from(output.stdout.unwrap())
-                        );
-
-                    let (stdout, stderr) = if commands.peek().is_some() {
-                        (Stdio::piped(), Stdio::piped())
-                    } else {
-                        (Stdio::inherit(), Stdio::inherit())
-                    };
-
-                    let process = Command::new(command)
-                        .args(args)
-                        .stdin(stdin)
-                        .stdout(stdout)
-                        .stderr(stderr)
-                        .spawn();
-
-                    match process {
-                        Ok(output) => {
-                            previous_command = Some(output)
+                _ => {}
+            }
+            match input {
+                code => {
+                    let mut code_chars = code.chars().enumerate();
+                    let mut code = String::from(code);
+                    loop {
+                        //println!("{}", code_chars);
+                        if let Some((index, c)) = code_chars.next() {
+                            if c == ':' {
+                                code.insert_str(index + 1, "\n");
+                                println!("got {} @ {}, code: {}", c, index, code);
+                            }
+                        } else if let None = code_chars.next() {
+                            break;
+                        }
+                    }
+                    /*items.iter().enumerate().for_each(|(i, x)| {
+                        println!("Item {} = {}", i, x);
+                    })*/
+                    match run_py(py, code) {
+                        Ok(result) => {
+                            lib::write_raw(result.to_string().as_str()).unwrap();
                         },
                         Err(e) => {
-                            previous_command = None;
-                            eprintln!("Error: {}", e)
+                            eprintln!("{}\n", e);
                         }
                     }
                 }
             }
         }
 
-        if let Some(mut final_command) = previous_command {
+        /*if let Some(mut final_command) = previous_command {
             // wait until final command has finished, print if there's an error
             if let Err(e) = final_command.wait() {
                 eprintln!("{}", e);
             }
-        }
+        }*/
     }
+}
+
+
+fn run_py(py: Python, code: String) -> PyResult<&PyAny> {
+    py.eval(code.as_str(), None, None)
 }
 
 fn init_shell() {
@@ -124,14 +143,7 @@ fn init_shell() {
 }
 
 fn set_title(title: String) {
-    match lib::write_raw(format!("\x1b[2;{}\x07", title).as_str()) {
-        Ok(_) => {},
-        Err(e) => println!("ERROR: {}", e)
-    }
-}
-
-fn current_dir() -> String {
-    String::from(env::current_dir().unwrap().clone().to_str().unwrap())
+    crossterm::execute!(stdout(), terminal::SetTitle(title)).unwrap();
 }
 
 // Clear shell using escape sequence
