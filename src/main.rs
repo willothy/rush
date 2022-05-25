@@ -2,23 +2,23 @@ use std::io::*;
 use std::process::{Command, Stdio, Child};
 use std::path::{self, PathBuf};
 use std::env;
-use std::os::raw::{c_int, c_uint, c_ulong};
-use std::fmt::Display;
-
 
 use pyo3::prelude::*;
 use pyo3::types::IntoPyDict;
 
+use substring::Substring;
 use whoami;
 use crossterm::{ExecutableCommand, terminal};
 
+mod rush_path;
 mod lib;
+
+use rush_path::RushPath;
 
 fn main() {
     init_shell();
     main_loop();
 }
-
 
 fn main_loop() {
     pyo3::prepare_freethreaded_python();
@@ -26,23 +26,31 @@ fn main_loop() {
     let py: Python = gil.python();
 
     let mut input: String = String::new();
-    let mut current_dir: String = String::from(env::current_dir()
-        .unwrap()
-        .to_str()
-        .unwrap());
+    let mut current_dir: RushPath = RushPath::from(env::current_dir().unwrap());
+    let mut multiline: bool = false;
 
     loop {
-        input.clear();
-        print!("{} in {}\nrush on {} > ", whoami::username(), current_dir, whoami::hostname());
+        if multiline {
+            input.clear();
+        }
+
+        print!("{} in {}\nrush on {} > ", whoami::username(), current_dir, whoami::hostname()); // Temporary Prompt
         let _ = stdout().flush();
-        let mut buf = Vec::<u8>::new();
+
 
         //stdin().read_line(&mut input).unwrap();
-        let input_size: usize = stdin().read_to_string(&mut input).unwrap();
+        match stdin().read_line(&mut input) {
+            Ok(0) => continue,
+            Ok(_) => {},
+            Err(_) => continue
+        };
 
-        /*for i in 0..input_size {
-            input.push(*buf.get(i).unwrap() as char)
-        }*/
+        if input.trim().ends_with("\\") {
+            multiline = true;
+            continue;
+        } else {
+            multiline = false;
+        }
 
         let mut commands = input
             .trim()
@@ -74,7 +82,12 @@ fn main_loop() {
                     let new_dir = path::Path::new(new_dir);
                     if let Err(e) = env::set_current_dir(&new_dir) {
                         eprintln!("{}", e);
+                        env::set_current_dir("/").unwrap();
                     }
+                    current_dir.set(match env::current_dir() {
+                        Ok(dir) => dir,
+                        Err(_) => PathBuf::from("/")
+                    });
                     set_title(String::from(format!("rush {}", new_dir.to_str().unwrap())));
                     //previous_command = None;
                 },
@@ -89,7 +102,7 @@ fn main_loop() {
                         //println!("{}", code_chars);
                         if let Some((index, c)) = code_chars.next() {
                             if c == ':' {
-                                code.insert_str(index + 1, "\n");
+                                code.insert_str(index + 2, "\n");
                                 println!("got {} @ {}, code: {}", c, index, code);
                             }
                         } else if let None = code_chars.next() {
